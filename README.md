@@ -214,3 +214,58 @@ After startup:
 ### 4. Apply Migrations
 
 Migrations are applied automatically when the `app` container starts (the `docker/app.sh` script runs `alembic upgrade head` before starting the server).
+
+---
+
+## Testing
+
+### Stack
+
+| Tool | Purpose |
+|---|---|
+| `pytest` + `pytest-asyncio` | Async test runner |
+| `SQLAlchemy` + `aiosqlite` | In-memory SQLite — no real DB needed |
+| `httpx` | Async HTTP client for API tests |
+| `unittest.mock.AsyncMock` | Redis mock — no real Redis needed |
+| `locust` | Load / performance testing |
+
+### Unit Tests — `LinkService`
+
+Located in `tests/links/test_service.py`. Tests the service layer directly against the in-memory database, covering:
+
+- `create_link` — short code generation, custom aliases, conflict detection, owner assignment, custom expiry
+- `get_link` — existing, missing, and expired links
+- `use_link` — access count increment, `last_accessed_at` update
+- `update_link` — URL change, wrong-owner rejection
+- `delete_link` — row removal, `ExpiredLink` archive creation, wrong-owner rejection
+- `delete_expired` — bulk expiry cleanup, owned vs anonymous archiving
+- `search_links` — URL match, expired-link exclusion
+
+### API Tests — `tests/test_api.py`
+
+Full HTTP-level tests using an `AsyncClient` with the database and Redis mocked out:
+
+- `POST /links/shorten` — anonymous, authenticated, custom alias, duplicate alias
+- `GET /links/{short_code}` — redirect, unknown code
+- `GET /links/{short_code}/stats` — existing link, 404
+- `GET /links/search` — match, empty result
+- `DELETE /links/{short_code}` — own link, unauthenticated (401), another user's link (404)
+- `PUT /links/{short_code}` — own link, unauthenticated (401), another user's link
+- `POST /links/history` — unauthenticated (401), empty history
+- `POST /auth/register` — new user, duplicate email (400)
+- `POST /auth/jwt/login` — valid credentials, wrong password (400)
+
+### Load Tests — `tests/test_load.py`
+
+Uses [Locust](https://locust.io/) to simulate realistic traffic against a live server. Two user classes are defined:
+
+| User class | Traffic share | Behaviour |
+|---|---|---|
+| `AnonymousUser` | ~80 % | shorten, redirect, stats, search |
+| `RegisteredUser` | ~20 % | register, login, shorten, update, delete, history |
+
+**Interactive UI** (open http://localhost:8089 to configure and start the test):
+
+```bash
+locust -f tests/test_load.py --host http://localhost:9999
+```
