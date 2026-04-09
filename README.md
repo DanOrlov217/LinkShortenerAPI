@@ -178,7 +178,7 @@ Authorization: Bearer <token>
 
 ```bash
 git clone <repo-url>
-cd AppliedPython_Project_3
+cd LinkShortenerAPI
 ```
 
 ### 2. Create a `.env` File
